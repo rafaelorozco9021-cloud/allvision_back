@@ -86,8 +86,15 @@ export class WhatsappService {
         timeout: 20000,
       });
 
+      if (!res.data?.key?.id) {
+        this.logger.warn(
+          `Evolution no confirmo envio a ${jid}: ${JSON.stringify(res.data).slice(0, 220)}`,
+        );
+        return false;
+      }
+
       this.logger.log(`Texto enviado a ${jid}`);
-      return Boolean(res.data?.key?.id || res.data?.status);
+      return true;
     } catch (error) {
       const detail = error.response?.data
         ? JSON.stringify(error.response.data).slice(0, 200)
@@ -107,17 +114,20 @@ export class WhatsappService {
 
     try {
       const url = `${this.apiBaseUrl}/message/sendMedia/${this.instance}`;
+
+      // Evolution API v2 exige el campo "media" (url http o base64).
+      // "url" y "file" se rechazan con: Owned media must be a url or base64.
+      const isRemote = /^https?:\/\//i.test(imageUrl);
+
       const payload: Record<string, string> = {
         number: `${jid}@c.us`,
         mediatype: 'image',
-        mimetype: 'image/jpeg',
+        mimetype: isRemote ? 'image/jpeg' : 'image/png',
         caption: caption || '',
+        media: imageUrl,
       };
-      if (/^https?:\/\//i.test(imageUrl)) {
-        payload.url = imageUrl;
-      } else {
-        payload.basename = 'imagen';
-        payload.file = imageUrl;
+      if (isRemote) {
+        payload.fileName = 'allvision.jpg';
       }
 
       const res = await axios.post(url, payload, {
@@ -125,8 +135,15 @@ export class WhatsappService {
         timeout: 30000,
       });
 
+      if (!res.data?.key?.id) {
+        this.logger.warn(
+          `Evolution no confirmo imagen a ${jid}: ${JSON.stringify(res.data).slice(0, 220)}`,
+        );
+        return false;
+      }
+
       this.logger.log(`Imagen enviada a ${jid}`);
-      return Boolean(res.data?.key?.id || res.data?.status);
+      return true;
     } catch (error) {
       const detail = error.response?.data
         ? JSON.stringify(error.response.data).slice(0, 200)

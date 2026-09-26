@@ -54,8 +54,8 @@ export class WhatsappBroadcastService implements OnModuleInit {
         .where('n.isRepresentative = :rep', { rep: true })
         .andWhere('n.active = :active', { active: true })
         .andWhere('n.publishedAt > :since', { since: since.toISOString() })
-        .orderBy('n.viralScore', 'DESC')
-        .addOrderBy('n.sourceCount', 'DESC')
+        .orderBy('n.sourceCount', 'DESC')
+        .addOrderBy('n.viralScore', 'DESC')
         .addOrderBy('n.publishedAt', 'DESC')
         .take(PER_CYCLE)
         .getMany();
