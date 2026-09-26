@@ -2,8 +2,8 @@
   "name": "allvision-backend",
   "version": "1.0.0",
   "engines": {
-    "node": ">=20.0.0 <23.0.0"
-  },
+  "node": ">=20.0.0"
+},
   "description": "AllVision News Aggregator Backend",
   "main": "dist/main.js",
   "scripts": {
