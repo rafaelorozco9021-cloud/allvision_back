@@ -12,9 +12,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
       imports: [NestConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        type: 'sqljs',
-        location: config.get<string>('DATABASE_URL', './allvision.sqlite'),
-        autoSave: true,
+        type: 'postgres',
+        url: config.get<string>('DATABASE_URL', 'postgres://localhost:5432/allvision'),
+        ssl: config.get<string>('DATABASE_SSL', 'true') !== 'false',
         synchronize: true,
         logging: false,
         entities: [__dirname + '/**/*.entity{.ts,.js}'],

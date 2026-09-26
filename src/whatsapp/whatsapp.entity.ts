@@ -27,6 +27,6 @@ export class WhatsappSubscriber {
   @Column({ type: 'text', default: '' })
   sent_news_ids: string;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: 'timestamptz', nullable: true })
   last_sent_at: Date | null;
 }

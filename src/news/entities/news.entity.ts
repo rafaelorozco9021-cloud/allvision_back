@@ -56,10 +56,10 @@ export class NewsEntity {
   @Column({ nullable: true })
   sourceUrl: string | null;
 
-  @Column({ type: 'datetime' })
+  @Column({ type: 'timestamptz' })
   publishedAt: Date;
 
-  @Column({ type: 'float', default: 0 })
+  @Column({ type: 'double precision', default: 0 })
   viralScore: number;
 
   @Column({ type: 'int', default: 1 })
