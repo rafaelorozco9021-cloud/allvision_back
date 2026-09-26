@@ -2,9 +2,11 @@ import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { NewsService } from '../services/news.service';
 import { NewsQueryDto } from '../dto/news-query.dto';
+import { Public } from '../../common/decorators/public.decorator';
 
 @ApiTags('News')
 @Controller('news')
+@Public()
 export class NewsController {
   constructor(
     private readonly newsService: NewsService,

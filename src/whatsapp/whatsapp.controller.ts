@@ -9,6 +9,7 @@ import { WhatsappService } from './whatsapp.service';
 import { WhatsappBroadcastService } from './services/whatsapp-broadcast.service';
 import { WhatsappSubscriber } from './whatsapp.entity';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Public } from '../common/decorators/public.decorator';
 
 @ApiTags('whatsapp')
 @Controller('whatsapp')
@@ -21,6 +22,7 @@ export class WhatsappController {
   ) {}
 
   @Post('subscribe')
+  @Public()
   @ApiOperation({ summary: 'Subscribe to WhatsApp newsletter' })
   @ApiResponse({ status: 201, description: 'Subscriber added successfully' })
   async subscribe(
@@ -32,6 +34,7 @@ export class WhatsappController {
   }
 
   @Post('unsubscribe')
+  @Public()
   @ApiOperation({ summary: 'Unsubscribe from WhatsApp newsletter' })
   @ApiResponse({ status: 200, description: 'Subscriber removed successfully' })
   async unsubscribe(@Body('phoneNumber') phoneNumber: string): Promise<void> {
