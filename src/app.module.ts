@@ -6,6 +6,7 @@ import { NewsModule } from './news/news.module';
 import { RankingModule } from './ranking/ranking.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
+import { LegalModule } from './legal/legal.module';
 import { ApiKeyGuard } from './common/guards/api-key.guard';
 
 @Module({
@@ -16,6 +17,7 @@ import { ApiKeyGuard } from './common/guards/api-key.guard';
     RankingModule,
     SchedulerModule,
     WhatsappModule,
+    LegalModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ApiKeyGuard },

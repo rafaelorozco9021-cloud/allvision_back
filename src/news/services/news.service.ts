@@ -3,6 +3,7 @@ import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { NewsEntity } from '../../news/entities/news.entity';
 import { NewsData } from '../../news/entities/news.entity';
+import { isImageBlocked } from '../../config/sources.config';
 
 @Injectable()
 export class NewsService {
@@ -78,18 +79,24 @@ export class NewsService {
   async saveNewsBatch(newsItems: NewsEntity[]): Promise<NewsEntity[]> {
     const saved: NewsEntity[] = [];
     for (const item of newsItems) {
+      if (isImageBlocked(item.source)) this.stripImages(item);
       const existing = await this.newsRepository.findOne({
         where: { canonicalUrl: item.canonicalUrl },
       });
       if (existing) {
         existing.sourceCount += 1;
         if (!existing.sourceUrl && item.sourceUrl) existing.sourceUrl = item.sourceUrl;
-        // Higiene de fotos: fusiona nuevas + existentes, elimina duplicadas,
-        // placeholders e iconos de UI (p.ej. popover/plugins) y conserva max 3
-        const merged = this.mergeImages(item.images, existing.images);
-        if (JSON.stringify(merged) !== JSON.stringify(existing.images || [])) {
-          existing.images = merged.length > 0 ? merged : existing.images;
-          if (merged.length > 0) existing.mainImage = merged[0];
+        if (isImageBlocked(existing.source)) {
+          // Fuente bloqueada: el merge no debe resucitar una foto previa.
+          this.stripImages(existing);
+        } else {
+          // Higiene de fotos: fusiona nuevas + existentes, elimina duplicadas,
+          // placeholders e iconos de UI (p.ej. popover/plugins) y conserva max 3
+          const merged = this.mergeImages(item.images, existing.images);
+          if (JSON.stringify(merged) !== JSON.stringify(existing.images || [])) {
+            existing.images = merged.length > 0 ? merged : existing.images;
+            if (merged.length > 0) existing.mainImage = merged[0];
+          }
         }
         await this.newsRepository.save(existing);
         saved.push(existing);
@@ -101,17 +108,28 @@ export class NewsService {
     return saved;
   }
 
+  /** Vacia la fotografia de una nota (opcion A: sin imagen). */
+  private stripImages(news: NewsEntity): void {
+    news.mainImage = '';
+    news.images = null;
+  }
+
   async saveIfNew(item: NewsEntity): Promise<NewsEntity> {
+    if (isImageBlocked(item.source)) this.stripImages(item);
     const existing = await this.newsRepository.findOne({
       where: { canonicalUrl: item.canonicalUrl },
     });
     if (existing) {
       existing.sourceCount += 1;
       if (!existing.sourceUrl && item.sourceUrl) existing.sourceUrl = item.sourceUrl;
-      const merged = this.mergeImages(item.images, existing.images);
-      if (merged.length > 0 && JSON.stringify(merged) !== JSON.stringify(existing.images || [])) {
-        existing.images = merged;
-        existing.mainImage = merged[0];
+      if (isImageBlocked(existing.source)) {
+        this.stripImages(existing);
+      } else {
+        const merged = this.mergeImages(item.images, existing.images);
+        if (merged.length > 0 && JSON.stringify(merged) !== JSON.stringify(existing.images || [])) {
+          existing.images = merged;
+          existing.mainImage = merged[0];
+        }
       }
       return this.newsRepository.save(existing);
     }

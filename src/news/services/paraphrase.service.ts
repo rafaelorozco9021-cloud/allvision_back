@@ -25,10 +25,15 @@ export class ParaphraseService {
   ) {}
 
   private get conf() {
+    const primary = this.configService.get<string>('AI_MODEL', '') || '';
+    const extra = (this.configService.get<string>('AI_MODEL_FALLBACK', '') || '')
+      .split(',')
+      .map((m) => m.trim())
+      .filter(Boolean);
     return {
       baseUrl: (this.configService.get<string>('AI_BASE_URL', '') || '').replace(/\/$/, ''),
       apiKey: this.configService.get<string>('AI_API_KEY', '') || '',
-      model: this.configService.get<string>('AI_MODEL', 'auto/cheap') || 'auto/cheap',
+      models: [primary, ...extra].filter(Boolean),
       limit: this.configService.get<number>('AI_PARAPHRASE_LIMIT', 20) || 20,
       timeout: this.configService.get<number>('AI_TIMEOUT_MS', 45000) || 45000,
       concurrency: 4,
@@ -37,42 +42,49 @@ export class ParaphraseService {
 
   /** Parafrasea UN titular. Retorna null si no se pudo (usar fallback). */
   async paraphraseTitle(rawTitle: string): Promise<string | null> {
-    const { baseUrl, apiKey, model, timeout } = this.conf;
-    if (!baseUrl || !apiKey) {
+    const { baseUrl, apiKey, models, timeout } = this.conf;
+    if (!baseUrl || !apiKey || models.length === 0) {
       if (!this.warnedNoKey) {
         this.warnedNoKey = true;
-        this.logger.warn('IA no configurada (AI_BASE_URL/AI_API_KEY): se omiten parafrasis');
+        this.logger.warn('IA no configurada (AI_BASE_URL/AI_API_KEY/AI_MODEL): se omiten parafrasis');
       }
       return null;
     }
-    try {
-      const res = await axios.post(
-        `${baseUrl}/chat/completions`,
-        {
-          model,
-          temperature: 0.2,
-          max_tokens: 80,
-          messages: [
-            {
-              role: 'system',
-              content:
-                'Reescribe titulares de noticias con tus propias palabras, fiel al hecho, maximo 90 caracteres, sin clickbait y sin nombrar medios. Responde SOLO con el titular, sin comillas ni explicaciones.',
-            },
-            { role: 'user', content: `Reescribe: ${rawTitle}` },
-          ],
-        },
-        {
-          headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-          timeout,
-          responseType: 'text',
-        },
-      );
-      const text = this.extractText(res.data, res.headers?.['content-type'] as string);
-      return this.validate(rawTitle, text);
-    } catch (e: any) {
-      this.logger.debug(`Parafrasis fallo: ${e.message}`);
-      return null;
+    for (const model of models) {
+      try {
+        const res = await axios.post(
+          `${baseUrl}/chat/completions`,
+          {
+            model,
+            temperature: 0.2,
+            max_tokens: 80,
+            // Los Nemotron de NVIDIA son modelos de razonamiento: sin esto filtran
+            // su analisis a `content` y el titular sale inservible.
+            chat_template_kwargs: { enable_thinking: false },
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'Reescribe titulares de noticias con tus propias palabras, fiel al hecho, maximo 90 caracteres, sin clickbait y sin nombrar medios. Responde SOLO con el titular, sin comillas ni explicaciones.',
+              },
+              { role: 'user', content: `Reescribe: ${rawTitle}` },
+            ],
+          },
+          {
+            headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            timeout,
+            responseType: 'text',
+          },
+        );
+        const text = this.extractText(res.data, res.headers?.['content-type'] as string);
+        const valid = this.validate(rawTitle, text);
+        if (valid) return valid;
+        this.logger.debug(`Paraphrase ${model} devolvio texto no valido`);
+      } catch (e: any) {
+        this.logger.debug(`Paraphrase fallo en ${model}: ${e.message}`);
+      }
     }
+    return null;
   }
 
   /** Ensambla texto desde respuesta JSON OpenAI o cuerpo SSE. */
@@ -122,7 +134,7 @@ export class ParaphraseService {
    */
   async paraphrasePending(): Promise<{ attempted: number; rewritten: number }> {
     const { limit, concurrency } = this.conf;
-    if (!this.conf.baseUrl || !this.conf.apiKey) {
+    if (!this.conf.baseUrl || !this.conf.apiKey || this.conf.models.length === 0) {
       await this.paraphraseTitle('ping');
       return { attempted: 0, rewritten: 0 };
     }

@@ -1,4 +1,30 @@
-export const sources = [
+export interface SourceConfig {
+  name: string;
+  domain: string;
+  baseUrl: string;
+  feedUrl: string;
+  frequencyMinutes: number;
+  selectors: {
+    list: string;
+    title: string;
+    link: string;
+    image: string;
+    body: string;
+  };
+  rssEnabled: boolean;
+  /**
+   * No publicar fotografias de esta fuente: se muestra solo el titular, el
+   * resumen y el enlace al original (opcion A del criterio de derechos).
+   *
+   * Motivo: fotografia deublicationional encargo con derechos gestionados de
+   * forma activa. En El Heraldo y Semana el CDN de Arc sirve las imagenes con
+   * URL firmada (`?auth=`), enlazarla desde otro sitio evita su control de
+   * acceso, que es un problema tecnico ademas de legal.
+   */
+  noImages?: boolean;
+}
+
+export const sources: SourceConfig[] = [
   {
     name: 'El Tiempo',
     domain: 'https://www.eltiempo.com',
@@ -13,6 +39,7 @@ export const sources = [
       body: 'p',
     },
     rssEnabled: true,
+    noImages: true,
   },
   {
     name: 'El Heraldo',
@@ -28,12 +55,14 @@ export const sources = [
       body: 'p',
     },
     rssEnabled: true,
+    noImages: true,
   },
   {
     name: 'El Espectador',
     domain: 'elespectador.com',
     baseUrl: 'https://www.elespectador.com',
-    feedUrl: 'https://news.google.com/rss/search?q=site:elespectador.com&hl=es-419&gl=CO&ceid=CO:es-419',
+    feedUrl:
+      'https://news.google.com/rss/search?q=site:elespectador.com&hl=es-419&gl=CO&ceid=CO:es-419',
     frequencyMinutes: 30,
     selectors: {
       list: '.Card-HomeEE',
@@ -43,6 +72,7 @@ export const sources = [
       body: 'p',
     },
     rssEnabled: false,
+    noImages: true,
   },
   {
     name: 'Zona Cero',
@@ -73,6 +103,7 @@ export const sources = [
       body: 'p',
     },
     rssEnabled: true,
+    noImages: true,
   },
   {
     name: 'La Patilla',
@@ -121,18 +152,16 @@ export const sources = [
   },
 ];
 
-export interface SourceConfig {
-  name: string;
-  domain: string;
-  baseUrl: string;
-  feedUrl: string;
-  frequencyMinutes: number;
-  selectors: {
-    list: string;
-    title: string;
-    link: string;
-    image: string;
-    body: string;
-  };
-  rssEnabled: boolean;
+/** Nombres de fuente cuya fotografia no se publica (opcion A). */
+export const noImagesSources = new Set(
+  sources.filter((s) => s.noImages).map((s) => s.name.toLowerCase()),
+);
+
+/**
+ * La politica de imagenes se aplica tambien al guardar, no solo al raspar: si
+ * una nota de una fuente bloqueada ya tenia una foto de antes, el merge de
+ * `saveNewsBatch` la conservaria y volveria a publicar la imagen.
+ */
+export function isImageBlocked(source?: string | null): boolean {
+  return !!source && noImagesSources.has(source.trim().toLowerCase());
 }

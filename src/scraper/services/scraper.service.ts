@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import { SourceConfig } from '../../config/sources.config';
+import { SourceConfig, sources } from '../../config/sources.config';
 import { SummaryService } from './summary.service';
 import { NewsService } from '../../news/services/news.service';
 import { StoryClusterService } from '../../news/services/story-cluster.service';
@@ -41,7 +41,11 @@ export class ScraperService {
         const newsItems = await this.scrapeSource(sourceConfig);
         const saved = await this.newsService.saveNewsBatch(newsItems);
         results.scraped += saved.length;
-        this.logger.log(`Scraped ${saved.length} news from ${sourceConfig.name}`);
+        const conImg = saved.filter((n) => !!n.mainImage).length;
+        this.logger.log(
+          `Scraped ${saved.length} news from ${sourceConfig.name}` +
+            (sourceConfig.noImages ? ` [sin imagen por politica, conImg=${conImg}]` : ''),
+        );
       } catch (error: any) {
         const msg = `Error scraping ${sourceConfig.name}: ${error.message}`;
         results.errors.push(msg);
@@ -123,13 +127,20 @@ export class ScraperService {
     const timeout = this.configService.get<number>('REQUEST_TIMEOUT', 10000);
     const items: NewsEntity[] = [];
     for (const item of feed.items.slice(0, maxItems)) {
-      const rawContent = item['content:encoded'] || item['content'] || item['content:summary'] || '';
+      const fullBody = item['content:encoded'] || '';
+      // El `description` del RSS (`content`/`contentSnippet`) lo escribe el medio
+      // para redistribucion. `content:encoded` es el cuerpo del articulo: es
+      // expresion protegida y ademas arrastra boilerplate de WordPress, asi que
+      // solo se usa si el feed no trae description.
+      const rssDescription = item.contentSnippet || item.content || item['content:summary'] || '';
+      const rawSummary = rssDescription || fullBody || item.title || '';
       const summary = this.summaryService.generateSummary(
-        sanitizeHtml(rawContent || item.title || '', { allowedTags: [] }) || item.title || '',
+        sanitizeHtml(rawSummary, { allowedTags: [] }) || item.title || '',
       );
-      const seedImages = this.collectRssImages(item, rawContent);
+      const seedImages = config.noImages ? [] : this.collectRssImages(item, fullBody);
       // Los links de Google News son redirects: se resuelven al enriquecer
       const isRedirect = (item.link || '').includes('news.google.com');
+      const needsEnrich = seedImages.length < MAX_PHOTOS || isRedirect;
       const news = new NewsEntity({
         title: cleanHeadline(item.title),
         originalTitle: item.title,
@@ -148,7 +159,8 @@ export class ScraperService {
         publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
       });
       // Marcar para resolucion+enriquecimiento posterior
-      (news as any)._needsEnrich = seedImages.length < MAX_PHOTOS || isRedirect;
+      (news as any)._needsEnrich = needsEnrich;
+      (news as any)._noImages = !!config.noImages;
       items.push(news);
     }
     await this.enrichWithArticleImages(items, userAgent, timeout);
@@ -194,7 +206,7 @@ export class ScraperService {
         if (!title || !link) return;
         const fullUrl = link.startsWith('http') ? link : `${config.baseUrl}${link}`;
         const summary = this.summaryService.generateSummary(bodyText || title);
-        const absImg = image ? this.absolutizeUrl(image, config.baseUrl) : null;
+        const absImg = !config.noImages && image ? this.absolutizeUrl(image, config.baseUrl) : null;
         const seedImages: string[] = absImg ? [absImg] : [];
         const newsEntity = new NewsEntity({
           title: cleanHeadline(title),
@@ -209,6 +221,7 @@ export class ScraperService {
           publishedAt: new Date(),
         });
         (newsEntity as any)._needsEnrich = true;
+        (newsEntity as any)._noImages = !!config.noImages;
         items.push(newsEntity);
       });
     } catch (error: any) {
@@ -262,7 +275,14 @@ export class ScraperService {
       await Promise.all(batch.map((news) => this.enrichOne(news, userAgent, fetchTimeout)));
     }
     for (const news of items) {
+      const blocked = (news as any)._noImages === true;
       delete (news as any)._needsEnrich;
+      delete (news as any)._noImages;
+      if (blocked) {
+        news.mainImage = '';
+        news.images = null;
+        continue;
+      }
       if (news.images && news.images.length > 0 && !news.mainImage) {
         news.mainImage = news.images[0];
       }
@@ -281,6 +301,8 @@ export class ScraperService {
         news.url = finalUrl;
         news.canonicalUrl = finalUrl;
       }
+      // Fuente marcada sin imagenes: solo se resolvio el redirect, no se buscan fotos.
+      if ((news as any)._noImages) return;
       const $ = cheerio.load(response.data as string);
       const seeds = [...(news.images || [])];
       const keys = new Set<string>(seeds.map((s) => this.photoKey(s)));
@@ -351,15 +373,6 @@ export class ScraperService {
   }
 
   private getSources(): SourceConfig[] {
-    return [
-      { name: 'El Tiempo', domain: 'https://www.eltiempo.com', baseUrl: 'https://www.eltiempo.com', feedUrl: 'https://www.eltiempo.com/rss/colombia.xml', frequencyMinutes: 30, selectors: { list: 'article', title: 'h2, h3', link: 'a', image: 'img', body: 'p' }, rssEnabled: true },
-      { name: 'El Heraldo', domain: 'https://www.elheraldo.co', baseUrl: 'https://www.elheraldo.co', feedUrl: 'https://www.elheraldo.co/arc/outboundfeeds/rss/', frequencyMinutes: 30, selectors: { list: '.featured-story-card', title: 'h1, h2, h3, h4', link: 'a.ingl-link', image: 'img', body: 'p' }, rssEnabled: true },
-      { name: 'El Espectador', domain: 'elespectador.com', baseUrl: 'https://www.elespectador.com', feedUrl: 'https://news.google.com/rss/search?q=site:elespectador.com&hl=es-419&gl=CO&ceid=CO:es-419', frequencyMinutes: 30, selectors: { list: '.Card-HomeEE', title: 'h2, h3', link: 'a', image: 'img', body: 'p' }, rssEnabled: false },
-      { name: 'Zona Cero', domain: 'zonacero.com', baseUrl: 'https://zonacero.com', feedUrl: 'https://zonacero.com/rss.xml', frequencyMinutes: 30, selectors: { list: '.view-ultimas-noticas-home .views-row', title: 'h2, h3', link: 'a', image: 'img', body: 'p' }, rssEnabled: false },
-      { name: 'Semana', domain: 'https://www.semana.com', baseUrl: 'https://www.semana.com', feedUrl: 'https://www.semana.com/arc/outboundfeeds/rss/', frequencyMinutes: 30, selectors: { list: 'article', title: 'h2, h3', link: 'a', image: 'img', body: 'p' }, rssEnabled: true },
-      { name: 'La Patilla', domain: 'lapatilla.com', baseUrl: 'https://lapatilla.com', feedUrl: 'https://lapatilla.com/feed', frequencyMinutes: 30, selectors: { list: 'article', title: 'h2, h3', link: 'a', image: 'img', body: 'p' }, rssEnabled: false },
-      { name: 'El Nacional', domain: 'https://www.elnacional.com', baseUrl: 'https://www.elnacional.com', feedUrl: 'https://www.elnacional.com/feed', frequencyMinutes: 30, selectors: { list: 'article', title: 'h2, h3', link: 'a', image: 'img', body: 'p' }, rssEnabled: true },
-      { name: 'Noticia al Dia', domain: 'noticialdia.com', baseUrl: 'https://noticialdia.com', feedUrl: 'https://noticialdia.com/feed', frequencyMinutes: 30, selectors: { list: 'article', title: 'h2, h3', link: 'a', image: 'img', body: 'p' }, rssEnabled: true },
-    ];
+    return sources;
   }
 }
