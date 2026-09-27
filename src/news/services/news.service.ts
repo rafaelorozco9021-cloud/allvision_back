@@ -102,7 +102,6 @@ export class NewsService {
         where: { canonicalUrl: item.canonicalUrl },
       });
       if (existing) {
-        existing.sourceCount += 1;
         if (!existing.sourceUrl && item.sourceUrl) existing.sourceUrl = item.sourceUrl;
         if (isImageBlocked(existing.source)) {
           // Fuente bloqueada: el merge no debe resucitar una foto previa.
@@ -138,7 +137,6 @@ export class NewsService {
       where: { canonicalUrl: item.canonicalUrl },
     });
     if (existing) {
-      existing.sourceCount += 1;
       if (!existing.sourceUrl && item.sourceUrl) existing.sourceUrl = item.sourceUrl;
       if (isImageBlocked(existing.source)) {
         this.stripImages(existing);

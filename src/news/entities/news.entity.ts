@@ -62,6 +62,16 @@ export class NewsEntity {
   @Column({ type: 'double precision', default: 0 })
   viralScore: number;
 
+  /**
+   * Cuantos medios DISTINTOS cubren esta historia. Lo escribe unicamente
+   * `StoryClusterService.recluster()` al agrupar: es el unico sitio donde se
+   * conoce el cluster completo.
+   *
+   * No se incrementa al re-raspar. Volver a ver la misma URL en el mismo feed
+   * no es una fuente nueva, y hacerlo inflaba el numero sin limite: una nota
+   * de El Espectador servida por el RSS de Google News durante dias llego a
+   * marcar x14 y otra a x34 cuando solo tenia un medio.
+   */
   @Column({ type: 'int', default: 1 })
   sourceCount: number;
 
