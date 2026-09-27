@@ -116,7 +116,14 @@ export class ParaphraseService {
     return out.join('').trim();
   }
 
-  /** Acepta solo reescrituras reales y seguras; si no, null (fallback). */
+  /**
+   * Acepta solo reescrituras reales y seguras; si no, null (fallback).
+   *
+   * Publicar un titular reescrito es asumir la responsabilidad editorial sobre
+   * el texto, asi que ademas de la longitud hay que descartar los defectos que
+   * el modelo produce de forma repetida: razonamiento filtrado, repetir
+   * palabras o caracteres, y marcado de markdown.
+   */
   private validate(original: string, candidate: string): string | null {
     if (!candidate) return null;
     let t = candidate.replace(/^["'«“]+|["'»”]+$/g, '').replace(/\s+/g, ' ').trim();
@@ -125,8 +132,32 @@ export class ParaphraseService {
       s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ').trim();
     if (n(t) === n(original)) return null; // identico: no aporta
     if (/^(lo siento|no puedo|como ia|soy un)/i.test(t)) return null; // negativa del modelo
+    if (ParaphraseService.META_PATTERN.test(t)) return null; // razonamiento o instrucciones
+    if (ParaphraseService.MARKDOWN_PATTERN.test(t)) return null; // **, listas, ```
+    if (ParaphraseService.DOUBLED_ACCENT.test(t)) return null; // "disparoóó"
+    if (ParaphraseService.TRIPLED_LETTER.test(t)) return null; // "aaaa"
+    if (ParaphraseService.DOUBLED_WORD.test(t)) return null; // "de de", "92 92"
     return t;
   }
+
+  /**
+   * Razonamiento del modelo o eco del prompt. `enable_thinking=false` cubre
+   * la mayor parte, pero con el fallback entre modelos alguno se cuela.
+   * Solo minusculas en las vocales acentuadas: una mayuscula nunca duplica.
+   */
+  private static readonly DOUBLED_ACCENT =
+    /([áéíóúÁÉÍÓÚ])\1/;
+
+  /** Tres o mas letras iguales seguidas. Solo minuscula: "XIII" es legitimo. */
+  private static readonly TRIPLED_LETTER = /([a-záéíóúñ])\1{2,}/;
+
+  /** Palabra repetida seguidos, incluida la numeracion: "92 92". */
+  private static readonly DOUBLED_WORD = /\b(\w{2,})\s+\1\b/i;
+
+  private static readonly META_PATTERN =
+    /here'?s? (a )?thinking|let'?s? break|we need to|the user wants|i (will|need to|'ll) |as an ai|my task|rephrase (the|this)|thinking process|step \d+:|constraints?:|own words|reformul|reescrib|aquí (está|tiene) el titular|^\*\*|the provided (text|headline)|faithful to the (fact|headline)/i;
+
+  private static readonly MARKDOWN_PATTERN = /```|^\s*[\[\*#]/;
 
   /**
    * Parafrasea representantes pendientes (titleAi=false) y reintenta los que
