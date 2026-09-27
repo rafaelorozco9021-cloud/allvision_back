@@ -27,13 +27,22 @@ export class WhatsappBroadcastService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    const subscribers = (
-      await this.whatsappService.getSubscribers()
-    ).filter((s) => s.opt_in === 1).length;
+    const all = await this.whatsappService.getSubscribers();
+    const activos = all.filter((s) => s.opt_in === 1).length;
 
     this.logger.log(
-      `Difusion WhatsApp activa: cada ${EVERY_MINUTES} min | ${PER_CYCLE} noticias/ciclo | ventana ${MAX_AGE_HOURS}h | ${subscribers} suscriptores`,
+      `Difusion WhatsApp activa: cada ${EVERY_MINUTES} min | ${PER_CYCLE} noticias/ciclo | ventana ${MAX_AGE_HOURS}h | ${activos} suscriptores`,
     );
+
+    // Si un numero no se puede normalizar, el envio va a fallar en cada
+    // ciclo y la base no lo registra (solo guarda los exitos). Avisamos aqui.
+    const malos = this.whatsappService.unusableSubscribers(all);
+    if (malos.length > 0) {
+      this.logger.error(
+        `${malos.length} suscriptor(es) con numero no utilizable, nunca recibiran noticias: ` +
+          malos.map((s) => `${s.name || 'sin nombre'} <${s.phone_number}>`).join(', '),
+      );
+    }
   }
 
   @Interval(EVERY_MS)

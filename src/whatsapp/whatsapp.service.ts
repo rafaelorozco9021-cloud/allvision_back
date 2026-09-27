@@ -70,12 +70,49 @@ export class WhatsappService {
     return this.subscriberRepository.find();
   }
 
+  /**
+   * Suscriptores activos cuyo numero no se puede normalizar a un JID valido.
+   * Se avisa al arrancar porque si no el envio falla en cada ciclo sin dejar
+   * rastro: la base solo registra los exitos.
+   */
+  unusableSubscribers(subs: WhatsappSubscriber[]): WhatsappSubscriber[] {
+    return subs.filter((s) => s.opt_in === 1 && !this.toJid(s.phone_number));
+  }
+
+  /**
+   * Normaliza un telefono a JID de WhatsApp.
+   *
+   * Antes se anteponia "57" a cualquier numero que no empezara por 57, lo
+   * que rompia los internacionales: un numero guardado como "+8424xxx5112"
+   * salia como "571842xxx5112@c.us" (14 digitos) y Evolution lo rechazaba
+   * siempre. Como los fallos no se guardaban en ningun lado, el suscriptor
+   * figuraba como "nunca enviado" sin explicar por que.
+   *
+   * Devuelve null si el numero no es utilizable, para no disparar un envio
+   * que va a fallar.
+   */
+  private toJid(phoneNumber: string): string | null {
+    const raw = String(phoneNumber || '').trim();
+    if (!raw) return null;
+    const digits = raw.replace(/\D/g, '');
+    // E.164 admite de 8 a 15 digitos.
+    if (digits.length < 8 || digits.length > 15) return null;
+    // Con "+" el pais ya esta declarado: no se adivina ni se antepone nada.
+    if (raw.startsWith('+')) return `${digits}@c.us`;
+    // Sin "+": 10 digitos se asume Colombia, 12 solo si ya trae el 57.
+    if (digits.length === 10) return `57${digits}@c.us`;
+    return `${digits}@c.us`;
+  }
+
   async sendText(
     phoneNumber: string,
     text: string,
   ): Promise<boolean> {
-    const digits = phoneNumber.replace(/\D/g, '');
-    const jid = digits.startsWith('57') ? digits : `57${digits}`;
+    const jid = this.toJid(phoneNumber);
+    if (!jid) {
+      this.logger.warn(`Numero invalido, se omite el envio: "${phoneNumber}"`);
+      return false;
+    }
 
     try {
       const url = `${this.apiBaseUrl}/message/sendText/${this.instance}`;
@@ -109,8 +146,11 @@ export class WhatsappService {
     imageUrl: string,
     caption?: string,
   ): Promise<boolean> {
-    const digits = phoneNumber.replace(/\D/g, '');
-    const jid = digits.startsWith('57') ? digits : `57${digits}`;
+    const jid = this.toJid(phoneNumber);
+    if (!jid) {
+      this.logger.warn(`Numero invalido, se omite el envio: "${phoneNumber}"`);
+      return false;
+    }
 
     try {
       const url = `${this.apiBaseUrl}/message/sendMedia/${this.instance}`;
@@ -246,6 +286,12 @@ export class WhatsappService {
         await this.subscriberRepository.save(sub);
         result.sent++;
       } else {
+        // Antes el fallo solo existed en el log: la base no lo guardaba y el
+        // suscriptor figuraba como "nunca enviado" sin causa. Ahora se marca
+        // el intento para poder distinguir "no le llego nada" de "llego mal".
+        sub.last_message_sent = `[FALLO] ${title.slice(0, 70)}`;
+        sub.last_sent_at = new Date();
+        await this.subscriberRepository.save(sub);
         result.failed++;
       }
     }
