@@ -86,6 +86,14 @@ export class NewsEntity {
   @Column({ default: true })
   active: boolean;
 
+  /**
+   * True si la fuente tiene prohibida la republicacion de fotos. No es
+   * columna: se calcula en lectura con `isImageBlocked(this.source)` para que
+   * la politica de `sources.config.ts` siga siendo la unica fuente de verdad
+   * y el frontend pueda explicar por que no hay imagen.
+   */
+  imagesBlocked?: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

@@ -39,6 +39,11 @@ export class NewsResponseDto {
   @IsBoolean()
   isRepresentative?: boolean;
 
+  /** True si la fuente no autoriza republicar su fotografia. */
+  @IsOptional()
+  @IsBoolean()
+  imagesBlocked?: boolean;
+
   @IsOptional()
   @IsString()
   category?: string;

@@ -41,11 +41,21 @@ export class NewsService {
 
     query.skip(page * limit).take(limit);
     const [news, total] = await query.getManyAndCount();
-    return { news, total };
+    return { news: news.map((n) => this.withImagePolicy(n)), total };
+  }
+
+  /**
+   * Anota si la foto fue retirada por politica. Se hace al leer y no como
+   * columna para que cambiar `sources.config.ts` surta efecto de inmediato.
+   */
+  private withImagePolicy(news: NewsEntity): NewsEntity {
+    news.imagesBlocked = isImageBlocked(news.source);
+    return news;
   }
 
   async findById(id: string): Promise<NewsEntity | null> {
-    return this.newsRepository.findOne({ where: { id, active: true } });
+    const found = await this.newsRepository.findOne({ where: { id, active: true } });
+    return found ? this.withImagePolicy(found) : null;
   }
 
   /** Medios que cubren la misma historia (cluster), ordenados por fecha. */
@@ -73,7 +83,7 @@ export class NewsService {
       where: { active: true, isRepresentative: true },
       order: { sourceCount: 'DESC', viralScore: 'DESC' },
       take: limit,
-    });
+    }).then((rows) => rows.map((n) => this.withImagePolicy(n)));
   }
 
   async saveNewsBatch(newsItems: NewsEntity[]): Promise<NewsEntity[]> {
