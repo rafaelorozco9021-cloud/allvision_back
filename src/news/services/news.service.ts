@@ -24,7 +24,14 @@ export class NewsService {
       .where('news.active = :active', { active: true })
       .andWhere('news.isRepresentative = :rep', { rep: true })
       .orderBy('news.sourceCount', 'DESC')
-      .addOrderBy('news.viralScore', 'DESC');
+      .addOrderBy('news.viralScore', 'DESC')
+      // Desempate obligatorio. Con viralScore en 0 para todas las notas el
+      // ORDER BY no ordenaba nada, y Postgres devuelve los empates en el
+      // orden que le sale: la misma nota caia en la pagina 1 y en la 2, y el
+      // feed la mostraba duplicada. publishedAt da el criterio util (lo mas
+      // reciente primero) e id, que es unico, cierra la fila.
+      .addOrderBy('news.publishedAt', 'DESC')
+      .addOrderBy('news.id', 'ASC');
 
     if (source) {
       query.andWhere('news.source = :source', { source });
@@ -81,7 +88,8 @@ export class NewsService {
   async findTrending(limit: number = 10): Promise<NewsEntity[]> {
     return this.newsRepository.find({
       where: { active: true, isRepresentative: true },
-      order: { sourceCount: 'DESC', viralScore: 'DESC' },
+      // Mismo desempate que findAll: viralScore en 0 no ordenaba nada.
+      order: { sourceCount: 'DESC', viralScore: 'DESC', publishedAt: 'DESC', id: 'ASC' },
       take: limit,
     }).then((rows) => rows.map((n) => this.withImagePolicy(n)));
   }
