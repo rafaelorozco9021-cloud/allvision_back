@@ -218,7 +218,7 @@ export class ScraperService {
           source: config.name,
           sourceUrl: config.baseUrl,
           category: classifyCategory({ title, summary, url: fullUrl }),
-          publishedAt: new Date(),
+          publishedAt: this.extractPublishedAt($, config.baseUrl) || new Date(),
         });
         (newsEntity as any)._needsEnrich = true;
         (newsEntity as any)._noImages = !!config.noImages;
@@ -352,7 +352,7 @@ export class ScraperService {
   }
 
   /** Elige el link del articulo dentro de una tarjeta: prefiere URLs del propio dominio (la mas larga). */
-  private pickArticleLink($: cheerio.CheerioAPI, $el: cheerio.Cheerio<any>, config: SourceConfig): string | undefined {
+private pickArticleLink($: cheerio.CheerioAPI, $el: cheerio.Cheerio<any>, config: SourceConfig): string | undefined {
     const hrefs: string[] = [];
     $el.find('a[href]').each((_, a) => {
       const h = $(a).attr('href');
@@ -366,6 +366,47 @@ export class ScraperService {
     const candidates = pool.filter((h) => !/#|\/tag\/|\/autor\/|premium|suscribete|newsletters/i.test(h));
     const list = candidates.length > 0 ? candidates : pool;
     return list.sort((a, b) => b.length - a.length)[0];
+  }
+
+  /**
+   * Intenta extraer la fecha de publicación de la página web.
+   * Busca metatags comunes: article:published_time, og:published_at, datePublished.
+   * Si no los encuentra, devuelve undefined para que el caller use new Date().
+   */
+  private extractPublishedAt($: cheerio.CheerioAPI, baseUrl: string): Date | undefined {
+    // Intenta og:published_time ( usado por muchos medios)
+    const ogPublished = $('meta[property="og:published_time"]').attr('content');
+    if (ogPublished) {
+      const date = new Date(ogPublished);
+      if (!isNaN(date.getTime())) return date;
+    }
+    // Intenta article:published_time (Schema.org)
+    const articlePublished = $('meta[property="article:published_time"]').attr('content');
+    if (articlePublished) {
+      const date = new Date(articlePublished);
+      if (!isNaN(date.getTime())) return date;
+    }
+    // Intenta datepublished (atributo HTML4/legacy)
+    const datePublished = $('meta[name="date"]').attr('content') || $('meta[name="datePublished"]').attr('content');
+    if (datePublished) {
+      const date = new Date(datePublished);
+      if (!isNaN(date.getTime())) return date;
+    }
+    // Intenta el <time> tag con atributo datetime
+    const timeElement = $('time[datetime]').first();
+    if (timeElement.length) {
+      const datetime = timeElement.attr('datetime');
+      if (datetime) {
+        const date = new Date(datetime);
+        if (!isNaN(date.getTime())) return date;
+      }
+    }
+    // Ningún metatag encontrado: retornar undefined para usar fallback
+    return undefined;
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private delay(ms: number): Promise<void> {

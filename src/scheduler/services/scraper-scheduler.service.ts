@@ -17,7 +17,7 @@ export class ScraperSchedulerService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    const minutes = Number(this.configService.get('SCRAPER_INTERVAL_MINUTES', 60));
+    const minutes = Number(this.configService.get('SCRAPER_INTERVAL_MINUTES', 300));
     const safeMinutes = Number.isFinite(minutes) && minutes > 0 ? minutes : 60;
     const intervalMs = safeMinutes * 60 * 1000;
 

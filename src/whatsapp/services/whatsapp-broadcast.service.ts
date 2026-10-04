@@ -6,7 +6,7 @@ import { NewsEntity } from '../../news/entities/news.entity';
 import { WhatsappService } from '../whatsapp.service';
 
 const EVERY_MINUTES = Number(
-  process.env.WHATSAPP_BROADCAST_EVERY_MINUTES || 30,
+  process.env.WHATSAPP_BROADCAST_EVERY_MINUTES || 1200,
 );
 const EVERY_MS = EVERY_MINUTES * 60 * 1000;
 const PER_CYCLE = Number(process.env.WHATSAPP_BROADCAST_PER_CYCLE || 3);
