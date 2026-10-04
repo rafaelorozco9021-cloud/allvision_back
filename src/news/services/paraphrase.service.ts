@@ -87,6 +87,84 @@ export class ParaphraseService {
     return null;
   }
 
+  /** Parafrasea el contenido (summary) de una noticia. Retorna null si no se pudo. */
+  async paraphraseContent(rawContent: string): Promise<string | null> {
+    const { baseUrl, apiKey, models, timeout } = this.conf;
+    if (!baseUrl || !apiKey || models.length === 0) return null;
+    for (const model of models) {
+      try {
+        const res = await axios.post(
+          `${baseUrl}/chat/completions`,
+          {
+            model,
+            temperature: 0.3,
+            max_tokens: 300,
+            chat_template_kwargs: { enable_thinking: false },
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'Reescribe el contenido de esta noticia con tus propias palabras. Mantén toda la información factual, cifras, nombres y contexto. No añadas opinión ni información nueva. Máximo 200 palabras. Responde SOLO con el texto reescrito, sin comillas ni explicaciones.',
+              },
+              { role: 'user', content: rawContent },
+            ],
+          },
+          {
+            headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            timeout,
+            responseType: 'text',
+          },
+        );
+        const text = this.extractText(res.data, res.headers?.['content-type'] as string);
+        const clean = text.replace(/^["'«“]+|["'»」]+$/g, '').replace(/\s+/g, ' ').trim();
+        if (clean.length >= 30 && clean !== rawContent) return clean;
+        this.logger.debug(`Content paraphrase ${model} devolvio texto no valido`);
+      } catch (e: any) {
+        this.logger.debug(`Content paraphrase fallo en ${model}: ${e.message}`);
+      }
+    }
+    return null;
+  }
+
+  /** Genera un análisis editorial de la noticia usando IA. */
+  async generateAnalysis(title: string, content: string): Promise<string | null> {
+    const { baseUrl, apiKey, models, timeout } = this.conf;
+    if (!baseUrl || !apiKey || models.length === 0) return null;
+    for (const model of models) {
+      try {
+        const res = await axios.post(
+          `${baseUrl}/chat/completions`,
+          {
+            model,
+            temperature: 0.4,
+            max_tokens: 250,
+            chat_template_kwargs: { enable_thinking: false },
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'Eres un analista editorial. Analiza esta noticia en 3-4 párrafos: contexto, implicaciones, y perspectiva. Sé objetivo y profesional. No uses markdown ni listas. Responde SOLO con el análisis.',
+              },
+              { role: 'user', content: `Título: ${title}\n\nContenido: ${content}` },
+            ],
+          },
+          {
+            headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            timeout,
+            responseType: 'text',
+          },
+        );
+        const text = this.extractText(res.data, res.headers?.['content-type'] as string);
+        const clean = text.replace(/\s+/g, ' ').trim();
+        if (clean.length >= 50) return clean;
+        this.logger.debug(`Analysis ${model} devolvio texto no valido`);
+      } catch (e: any) {
+        this.logger.debug(`Analysis fallo en ${model}: ${e.message}`);
+      }
+    }
+    return null;
+  }
+
   /** Ensambla texto desde respuesta JSON OpenAI o cuerpo SSE. */
   private extractText(data: any, contentType?: string): string {
     if (typeof data !== 'string') {
@@ -162,12 +240,13 @@ export class ParaphraseService {
   /**
    * Parafrasea representantes pendientes (titleAi=false) y reintenta los que
    * quedaron con version limpia (max 2 intentos). Tope por ciclo.
+   * Tambien parafrasea el contenido (summary) si contentAi=false.
    */
-  async paraphrasePending(): Promise<{ attempted: number; rewritten: number }> {
+  async paraphrasePending(): Promise<{ attempted: number; rewritten: number; contentRewritten: number }> {
     const { limit, concurrency } = this.conf;
     if (!this.conf.baseUrl || !this.conf.apiKey || this.conf.models.length === 0) {
       await this.paraphraseTitle('ping');
-      return { attempted: 0, rewritten: 0 };
+      return { attempted: 0, rewritten: 0, contentRewritten: 0 };
     }
     const fresh = await this.newsRepository.find({
       where: { active: true, isRepresentative: true, titleAi: false },
@@ -190,6 +269,7 @@ export class ParaphraseService {
       }
     }
     let rewritten = 0;
+    let contentRewritten = 0;
     for (let i = 0; i < queue.length; i += concurrency) {
       const batch = queue.slice(i, i + concurrency);
       await Promise.all(
@@ -205,11 +285,26 @@ export class ParaphraseService {
             news.title = cleanHeadline(raw);
             news.titleAi = true;
           }
+          if (!news.contentAi && news.summary) {
+            const contentBetter = await this.paraphraseContent(news.summary);
+            if (contentBetter) {
+              news.summary = contentBetter;
+              news.contentAi = true;
+              contentRewritten++;
+            }
+          }
+          if (!news.aiAnalysis) {
+            const analysis = await this.generateAnalysis(news.title, news.summary);
+            if (analysis) {
+              news.aiAnalysis = analysis;
+            }
+          }
         }),
       );
     }
     if (queue.length > 0) await this.newsRepository.save(queue);
     if (rewritten > 0) this.logger.log(`Parafrasis IA: ${rewritten}/${queue.length} titulares reescritos`);
-    return { attempted: queue.length, rewritten };
+    if (contentRewritten > 0) this.logger.log(`Contenido IA: ${contentRewritten}/${queue.length} contenidos reescritos`);
+    return { attempted: queue.length, rewritten, contentRewritten };
   }
 }

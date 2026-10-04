@@ -38,6 +38,14 @@ export class NewsEntity {
   @Column({ type: 'int', default: 0 })
   titleAiTries: number;
 
+  /** True si el contenido ya paso por parafrasis IA. */
+  @Column({ default: false })
+  contentAi: boolean;
+
+  /** Análisis generado por IA sobre la noticia. */
+  @Column({ type: 'text', nullable: true })
+  aiAnalysis: string | null;
+
   @Column('text')
   summary: string;
 
