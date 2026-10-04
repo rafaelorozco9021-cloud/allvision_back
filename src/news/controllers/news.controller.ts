@@ -1,8 +1,9 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { NewsService } from '../services/news.service';
 import { NewsQueryDto } from '../dto/news-query.dto';
 import { Public } from '../../common/decorators/public.decorator';
+import { ParaphraseService } from '../services/paraphrase.service';
 
 @ApiTags('News')
 @Controller('news')
@@ -10,6 +11,7 @@ import { Public } from '../../common/decorators/public.decorator';
 export class NewsController {
   constructor(
     private readonly newsService: NewsService,
+    private readonly paraphraseService: ParaphraseService,
   ) {}
 
   @Get()
@@ -37,5 +39,11 @@ export class NewsController {
     const news = await this.newsService.findById(id);
     if (!news) throw new Error('News not found');
     return news;
+  }
+
+  @Post('paraphrase')
+  async runParaphrase() {
+    const result = await this.paraphraseService.paraphrasePending();
+    return result;
   }
 }

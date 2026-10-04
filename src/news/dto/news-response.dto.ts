@@ -47,6 +47,10 @@ export class NewsResponseDto {
   @IsOptional()
   @IsString()
   category?: string;
+
+  @IsOptional()
+  @IsString()
+  aiAnalysis?: string | null;
 }
 
 export class NewsListResponseDto {
